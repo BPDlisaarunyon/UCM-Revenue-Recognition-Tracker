@@ -1,0 +1,250 @@
+<div style="color-scheme: light;">
+<style>
+  :root { color-scheme: light; }
+  .rrt-wrap { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #1a1a1a; max-width: 1180px; margin: 0 auto; padding: 20px 24px 48px; background: #fafafa; }
+  .rrt-h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .rrt-sub { font-size: 13px; color: #666; margin: 0 0 20px; }
+  .rrt-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .rrt-kpi { background: #fff; border: 1px solid #e2e2e2; border-radius: 10px; padding: 14px 16px; }
+  .rrt-kpi-label { font-size: 12px; color: #666; margin-bottom: 6px; }
+  .rrt-kpi-val { font-size: 22px; font-weight: 600; }
+  .rrt-section { background: #fff; border: 1px solid #e2e2e2; border-radius: 10px; padding: 18px 20px; margin-bottom: 20px; }
+  .rrt-section h2 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  .rrt-section p.desc { font-size: 12.5px; color: #666; margin: 0 0 14px; }
+  .rrt-controls { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  .rrt-btn { font-size: 12.5px; padding: 6px 12px; border: 1px solid #d5d5d5; border-radius: 999px; background: #fff; cursor: pointer; color: #333; }
+  .rrt-btn.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  .rrt-select { font-size: 12.5px; padding: 6px 10px; border: 1px solid #d5d5d5; border-radius: 6px; background: #fff; }
+  .rrt-flag { background: #fff8e1; border: 1px solid #f0d878; border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; font-size: 13px; }
+  .rrt-flag b { display: block; margin-bottom: 3px; }
+  .gridjs-wrapper { border-radius: 8px !important; }
+  .gridjs-th { font-size: 12px !important; background: #f5f5f5 !important; }
+  .gridjs-td { font-size: 12.5px !important; }
+  .rrt-status-select { font-size: 12px; padding: 3px 6px; border-radius: 5px; border: 1px solid #ccc; }
+  .rrt-note { font-size: 11.5px; color: #888; margin-top: 8px; }
+</style>
+
+<div class="rrt-wrap">
+  <div class="rrt-h1">Revenue recognition dashboard</div>
+  <p class="rrt-sub">Snapshot from Revenue Recognition Tracker.xlsx. Not connected to the workbook &mdash; refresh this artifact after you update the file to see new numbers.</p>
+
+  <div class="rrt-kpis" id="kpis"></div>
+
+  <div class="rrt-section">
+    <h2>Budget, earned, and open by campaign</h2>
+    <p class="desc">Bars show total budget, revenue earned to date, and revenue still open per campaign.</p>
+    <div style="position: relative; width: 100%; height: 320px;">
+      <canvas id="campaignChart" role="img" aria-label="Grouped bar chart of budget, earned, and open revenue for each campaign"></canvas>
+    </div>
+  </div>
+
+  <div class="rrt-section">
+    <h2>Campaigns &mdash; flex availability</h2>
+    <p class="desc">Available to Reallocate is budget minus everything already allocated to that campaign's sub-projects. $0 means the flex pool is fully committed.</p>
+    <div id="campaignsGrid"></div>
+  </div>
+
+  <div class="rrt-section">
+    <h2>Sub-projects (SOWs)</h2>
+    <p class="desc">Filter to one campaign to see its sub-project breakdown.</p>
+    <div class="rrt-controls">
+      <select class="rrt-select" id="campaignFilter"></select>
+    </div>
+    <div id="subGrid"></div>
+  </div>
+
+  <div class="rrt-section">
+    <h2>Invoices &mdash; Finance</h2>
+    <p class="desc">What to hand to Finance. Status changes here are saved locally in this dashboard for your own tracking &mdash; they do not update the Excel file.</p>
+    <div class="rrt-controls">
+      <button class="rrt-btn active" data-filter="All">All</button>
+      <button class="rrt-btn" data-filter="Not Yet Sent">Not yet sent</button>
+      <button class="rrt-btn" data-filter="Sent to Finance">Sent to Finance</button>
+      <button class="rrt-btn" data-filter="Confirmed by Finance">Confirmed</button>
+    </div>
+    <div id="invoicesGrid"></div>
+    <p class="rrt-note">Revenue not yet tied to an invoice number, across all campaigns: <strong id="unassignedTotal"></strong></p>
+  </div>
+
+  <div class="rrt-section">
+    <h2>Data-quality flags from the original file</h2>
+    <p class="desc">Carried over from the Read Me tab in the workbook &mdash; worth resolving before relying on the totals above.</p>
+    <div id="flags"></div>
+  </div>
+</div>
+</div>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridjs@5.0.2/dist/theme/mermaid.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/gridjs@5.0.2/dist/gridjs.umd.js" integrity="sha384-/XXDzxe4FsGiAe50i/u9pY/Vy/uX654MHB1xoc1BJNnH1WXHhqHga9g3q5tF4gj7" crossorigin="anonymous"></script>
+<script>
+(function() {
+  var DATA = {"campaigns": [{"Campaign ID": "CMP-01", "Campaign Name": "Brand Campaign Creative", "Flex?": "Y", "Original Budget": 2015000, "Revised Budget": 2015000, "Allocated to Sub-Projects": 2015000, "Available to Reallocate (Flex)": 0, "Total Earned": 236349.75, "Total Open": 1778650.25, "Notes": "Original UCMC-004."}, {"Campaign ID": "CMP-02", "Campaign Name": "Service Line Campaigns", "Flex?": "Y", "Original Budget": 0, "Revised Budget": 0, "Allocated to Sub-Projects": 0, "Available to Reallocate (Flex)": 0, "Total Earned": 0, "Total Open": 0, "Notes": "UCMC-006. No sub-projects defined yet in source file."}, {"Campaign ID": "CMP-03", "Campaign Name": "Cancer Center Pavilion", "Flex?": "Y", "Original Budget": 2215000, "Revised Budget": 2215000, "Allocated to Sub-Projects": 2215000, "Available to Reallocate (Flex)": 0, "Total Earned": 256086.25, "Total Open": 1958913.75, "Notes": "Includes standalone SOW 25-UCMC-200 plus the UCMC-007 sub-project group. Original file had no usable top-level budget (broken reference error) \u2014 this total is reconstructed as the sum of its sub-projects. Confirm the real approved campaign budget."}, {"Campaign ID": "CMP-04", "Campaign Name": "U.S. News & World Report Voting/Reputation", "Flex?": "Y", "Original Budget": 528000, "Revised Budget": 528000, "Allocated to Sub-Projects": 528000, "Available to Reallocate (Flex)": 0, "Total Earned": 514000, "Total Open": 14000, "Notes": null}, {"Campaign ID": "CMP-05", "Campaign Name": "Haas F1 Partnership", "Flex?": "Y", "Original Budget": 247250, "Revised Budget": 247250, "Allocated to Sub-Projects": 247250, "Available to Reallocate (Flex)": 0, "Total Earned": 122500, "Total Open": 124750, "Notes": "UCMC-009. Invoiced monthly."}, {"Campaign ID": "CMP-06", "Campaign Name": "Strategic Counsel & Advisory Support", "Flex?": "Y", "Original Budget": 490000, "Revised Budget": 490000, "Allocated to Sub-Projects": 490000, "Available to Reallocate (Flex)": 0, "Total Earned": 116159.3, "Total Open": 373840.7, "Notes": "UCMC-010."}, {"Campaign ID": "CMP-07", "Campaign Name": "Comms AOR", "Flex?": "Y", "Original Budget": 255153.5, "Revised Budget": 255153.5, "Allocated to Sub-Projects": 255153.5, "Available to Reallocate (Flex)": 0, "Total Earned": 195153.5, "Total Open": 60000, "Notes": "Also referenced as UCMC-010 in source file (duplicate ID) \u2014 no top-level budget was set originally; reconstructed as the sum of known invoices. Confirm real contracted budget."}], "subprojects": [{"SOW/Task ID": "25-UCMC-016", "Campaign ID": "CMP-01", "Legacy Group Ref": "UCMC-004", "Description": "Branding Campaign - Concepting", "Original Budget": 300000, "Revised Budget": 300000, "Earned to Date": 221349.75, "Open": 78650.25, "Status": "In Progress", "Notes": null}, {"SOW/Task ID": "25-UCMC-018", "Campaign ID": "CMP-01", "Legacy Group Ref": "UCMC-004", "Description": "Forecasted - Brand Campaign Deliverables", "Original Budget": 700000, "Revised Budget": 700000, "Earned to Date": 0, "Open": 700000, "Status": "Not Started", "Notes": null}, {"SOW/Task ID": "25-UCMC-019", "Campaign ID": "CMP-01", "Legacy Group Ref": "UCMC-004", "Description": "Branding Campaign - Video/Photoshoot", "Original Budget": 1000000, "Revised Budget": 1000000, "Earned to Date": 0, "Open": 1000000, "Status": "Not Started", "Notes": null}, {"SOW/Task ID": "25-UCMC-023", "Campaign ID": "CMP-01", "Legacy Group Ref": "UCMC-004", "Description": "Brand Campaign Concept Testing", "Original Budget": 15000, "Revised Budget": 15000, "Earned to Date": 15000, "Open": 0, "Status": "Complete", "Notes": null}, {"SOW/Task ID": "25-UCMC-200", "Campaign ID": "CMP-03", "Legacy Group Ref": "(direct)", "Description": "Cancer Pavilion Plan", "Original Budget": 125000, "Revised Budget": 125000, "Earned to Date": 125000, "Open": 0, "Status": "In Progress", "Notes": null}, {"SOW/Task ID": "26-UCMC-047", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "Creative Concepting", "Original Budget": 175000, "Revised Budget": 175000, "Earned to Date": 54351.25, "Open": 120648.75, "Status": "In Progress", "Notes": null}, {"SOW/Task ID": "CMP3-EXTRA1", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "Creative Development & Production", "Original Budget": 450000, "Revised Budget": 450000, "Earned to Date": 0, "Open": 450000, "Status": "Not Started", "Notes": "No SOW code in source file."}, {"SOW/Task ID": "26-UCMC-050", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "Landing Page Design", "Original Budget": 0, "Revised Budget": 0, "Earned to Date": 1032.5, "Open": -1032.5, "Status": "In Progress", "Notes": "No Original Budget in source file \u2014 confirm amount."}, {"SOW/Task ID": "26-UCMC-036", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "Integrated Engagement Strategy & Plan", "Original Budget": 85000, "Revised Budget": 85000, "Earned to Date": 10001.25, "Open": 74998.75, "Status": "In Progress", "Notes": null}, {"SOW/Task ID": "26-UCMC-037", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "Program Governance Meetings", "Original Budget": 65000, "Revised Budget": 65000, "Earned to Date": 970, "Open": 64030, "Status": "In Progress", "Notes": null}, {"SOW/Task ID": "26-UCMC-040", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "SEO Strategy & Optimization", "Original Budget": 50000, "Revised Budget": 50000, "Earned to Date": 0, "Open": 50000, "Status": "Not Started", "Notes": null}, {"SOW/Task ID": "26-UCMC-041", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "Earned Media", "Original Budget": 25000, "Revised Budget": 25000, "Earned to Date": 0, "Open": 25000, "Status": "Not Started", "Notes": null}, {"SOW/Task ID": "26-UCMC-038", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "Paid Media Expenses", "Original Budget": 434625, "Revised Budget": 434625, "Earned to Date": 0, "Open": 434625, "Status": "Not Started", "Notes": null}, {"SOW/Task ID": "26-UCMC-039", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "Paid Media Labor & Measurement", "Original Budget": 40375, "Revised Budget": 40375, "Earned to Date": 0, "Open": 40375, "Status": "Not Started", "Notes": null}, {"SOW/Task ID": "26-UCMC-042", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "Event Planning", "Original Budget": 250000, "Revised Budget": 250000, "Earned to Date": 4342.5, "Open": 245657.5, "Status": "In Progress", "Notes": null}, {"SOW/Task ID": "26-UCMC-043", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "Event Travel OOP Expenses", "Original Budget": 15000, "Revised Budget": 15000, "Earned to Date": 0, "Open": 15000, "Status": "Not Started", "Notes": null}, {"SOW/Task ID": "26-UCMC-044", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "Community Engagement", "Original Budget": 50000, "Revised Budget": 50000, "Earned to Date": 3496.25, "Open": 46503.75, "Status": "In Progress", "Notes": null}, {"SOW/Task ID": "26-UCMC-029", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "Account Management & Advisory", "Original Budget": 225000, "Revised Budget": 225000, "Earned to Date": 56892.5, "Open": 168107.5, "Status": "In Progress", "Notes": null}, {"SOW/Task ID": "CMP3-EXTRA2", "Campaign ID": "CMP-03", "Legacy Group Ref": "UCMC-007", "Description": "Event Production & Vendor Estimated Hard Cost", "Original Budget": 225000, "Revised Budget": 225000, "Earned to Date": 0, "Open": 225000, "Status": "Not Started", "Notes": "No SOW code in source file."}, {"SOW/Task ID": "25-UCMC-021", "Campaign ID": "CMP-04", "Legacy Group Ref": "(direct)", "Description": "U.S. News & World Report Voting Campaign", "Original Budget": 440000, "Revised Budget": 440000, "Earned to Date": 440000, "Open": 0, "Status": "Complete", "Notes": null}, {"SOW/Task ID": "26-UCMC-035", "Campaign ID": "CMP-04", "Legacy Group Ref": "(direct)", "Description": "UChicago National Reputation Campaign - Conference Support", "Original Budget": 88000, "Revised Budget": 88000, "Earned to Date": 74000, "Open": 14000, "Status": "In Progress", "Notes": null}, {"SOW/Task ID": "CMP5-SOW1", "Campaign ID": "CMP-05", "Legacy Group Ref": "UCMC-009", "Description": "Haas F1 Partnership: Overall Strategic Support", "Original Budget": 247250, "Revised Budget": 247250, "Earned to Date": 122500, "Open": 124750, "Status": "In Progress", "Notes": "Invoiced monthly \u2014 see Invoices - Finance tab for the 12 monthly invoice lines."}, {"SOW/Task ID": "25-UCMC-001", "Campaign ID": "CMP-06", "Legacy Group Ref": "UCMC-010", "Description": "UChicago Account Oversight", "Original Budget": 310000, "Revised Budget": 310000, "Earned to Date": 115000, "Open": 195000, "Status": "In Progress", "Notes": null}, {"SOW/Task ID": "CMP6-EXTRA1", "Campaign ID": "CMP-06", "Legacy Group Ref": "UCMC-010", "Description": "OOP Expenses", "Original Budget": 30000, "Revised Budget": 30000, "Earned to Date": 1159.3, "Open": 28840.7, "Status": "In Progress", "Notes": "No SOW code in source file."}, {"SOW/Task ID": "CMP6-EXTRA2", "Campaign ID": "CMP-06", "Legacy Group Ref": "UCMC-010", "Description": "Annual Planning", "Original Budget": 150000, "Revised Budget": 150000, "Earned to Date": 0, "Open": 150000, "Status": "Not Started", "Notes": null}, {"SOW/Task ID": "CMP7-SOW1", "Campaign ID": "CMP-07", "Legacy Group Ref": "UCMC-010 (dup)", "Description": "Comms AOR Retainer", "Original Budget": 240000, "Revised Budget": 240000, "Earned to Date": 180000, "Open": 60000, "Status": "In Progress", "Notes": "Budget backed into from known monthly invoices \u2014 confirm actual contracted amount."}, {"SOW/Task ID": "CMP7-EXTRA1", "Campaign ID": "CMP-07", "Legacy Group Ref": "UCMC-010 (dup)", "Description": "OOP Expenses", "Original Budget": 15153.5, "Revised Budget": 15153.5, "Earned to Date": 15153.5, "Open": 0, "Status": "In Progress", "Notes": "Budget backed into from known monthly invoices \u2014 confirm actual contracted amount."}], "monthly": [{"SOW/Task ID": "25-UCMC-016", "Campaign ID": "CMP-01", "Month": "Nov-25", "Type": "Fee", "Amount": 75003, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-016", "Campaign ID": "CMP-01", "Month": "Dec-25", "Type": "Fee", "Amount": 75000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-016", "Campaign ID": "CMP-01", "Month": "Jan-26", "Type": "Fee", "Amount": 70746.75, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-016", "Campaign ID": "CMP-01", "Month": "Feb-26", "Type": "Fee", "Amount": 600, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-023", "Campaign ID": "CMP-01", "Month": "Dec-25", "Type": "Fee", "Amount": 9000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-023", "Campaign ID": "CMP-01", "Month": "Jan-26", "Type": "Fee", "Amount": 6000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-200", "Campaign ID": "CMP-03", "Month": "Nov-25", "Type": "Fee", "Amount": 62500, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-200", "Campaign ID": "CMP-03", "Month": "Dec-25", "Type": "Fee", "Amount": 62500, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "26-UCMC-047", "Campaign ID": "CMP-03", "Month": "Apr-26", "Type": "Fee", "Amount": 1443.75, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "26-UCMC-047", "Campaign ID": "CMP-03", "Month": "May-26", "Type": "Fee", "Amount": 52907.5, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "26-UCMC-050", "Campaign ID": "CMP-03", "Month": "May-26", "Type": "Fee", "Amount": 1032.5, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "26-UCMC-036", "Campaign ID": "CMP-03", "Month": "Apr-26", "Type": "Fee", "Amount": 246.25, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "26-UCMC-036", "Campaign ID": "CMP-03", "Month": "May-26", "Type": "Fee", "Amount": 9755, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "26-UCMC-037", "Campaign ID": "CMP-03", "Month": "May-26", "Type": "Fee", "Amount": 970, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "26-UCMC-042", "Campaign ID": "CMP-03", "Month": "May-26", "Type": "Fee", "Amount": 4342.5, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "26-UCMC-044", "Campaign ID": "CMP-03", "Month": "Apr-26", "Type": "Fee", "Amount": 350, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "26-UCMC-044", "Campaign ID": "CMP-03", "Month": "May-26", "Type": "Fee", "Amount": 3146.25, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "26-UCMC-029", "Campaign ID": "CMP-03", "Month": "Apr-26", "Type": "Fee", "Amount": 33515, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "26-UCMC-029", "Campaign ID": "CMP-03", "Month": "May-26", "Type": "Fee", "Amount": 23377.5, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-021", "Campaign ID": "CMP-04", "Month": "Dec-25", "Type": "Fee", "Amount": 70000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-021", "Campaign ID": "CMP-04", "Month": "Jan-26", "Type": "Fee", "Amount": 200000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-021", "Campaign ID": "CMP-04", "Month": "Feb-26", "Type": "Fee", "Amount": 110000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-021", "Campaign ID": "CMP-04", "Month": "Mar-26", "Type": "Fee", "Amount": 60000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "26-UCMC-035", "Campaign ID": "CMP-04", "Month": "Apr-26", "Type": "Fee", "Amount": 22000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "26-UCMC-035", "Campaign ID": "CMP-04", "Month": "May-26", "Type": "Fee", "Amount": 52000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "CMP5-SOW1", "Campaign ID": "CMP-05", "Month": "Jan-26", "Type": "Fee", "Amount": 19500, "Invoice #": "INV-38952AF", "Recognized?": "Y", "Notes": "Jan Advisory/shot list"}, {"SOW/Task ID": "CMP5-SOW1", "Campaign ID": "CMP-05", "Month": "Feb-26", "Type": "Fee", "Amount": 14500, "Invoice #": "INV-38953AF", "Recognized?": "Y", "Notes": "Feb Advisory/Landing pg/Social"}, {"SOW/Task ID": "CMP5-SOW1", "Campaign ID": "CMP-05", "Month": "Apr-26", "Type": "Fee", "Amount": 30000, "Invoice #": "INV-38953AF", "Recognized?": "Y", "Notes": "Remainder of Feb invoice, recognized in April per source file"}, {"SOW/Task ID": "CMP5-SOW1", "Campaign ID": "CMP-05", "Month": "Mar-26", "Type": "Fee", "Amount": 14500, "Invoice #": "INV-39386AF", "Recognized?": "Y", "Notes": "March"}, {"SOW/Task ID": "CMP5-SOW1", "Campaign ID": "CMP-05", "Month": "Apr-26", "Type": "Fee", "Amount": 21500, "Invoice #": "INV-39927AF", "Recognized?": "Y", "Notes": "April Advisory"}, {"SOW/Task ID": "CMP5-SOW1", "Campaign ID": "CMP-05", "Month": "May-26", "Type": "Fee", "Amount": 22500, "Invoice #": "INV-40021AF", "Recognized?": "Y", "Notes": "May Advisory"}, {"SOW/Task ID": "25-UCMC-001", "Campaign ID": "CMP-06", "Month": "Nov-25", "Type": "Fee", "Amount": 15000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-001", "Campaign ID": "CMP-06", "Month": "Dec-25", "Type": "Fee", "Amount": 15000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-001", "Campaign ID": "CMP-06", "Month": "Jan-26", "Type": "Fee", "Amount": 20000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-001", "Campaign ID": "CMP-06", "Month": "Feb-26", "Type": "Fee", "Amount": 20000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-001", "Campaign ID": "CMP-06", "Month": "Mar-26", "Type": "Fee", "Amount": 15000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-001", "Campaign ID": "CMP-06", "Month": "Apr-26", "Type": "Fee", "Amount": 15000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "25-UCMC-001", "Campaign ID": "CMP-06", "Month": "May-26", "Type": "Fee", "Amount": 15000, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "CMP6-EXTRA1", "Campaign ID": "CMP-06", "Month": "Apr-26", "Type": "Expense", "Amount": 650, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": "OOP Expenses"}, {"SOW/Task ID": "CMP6-EXTRA1", "Campaign ID": "CMP-06", "Month": "May-26", "Type": "Expense", "Amount": 509.3, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": "OOP Expenses"}, {"SOW/Task ID": "CMP7-SOW1", "Campaign ID": "CMP-07", "Month": "Mar-26", "Type": "Fee", "Amount": 60000, "Invoice #": "INV-37370AF", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "CMP7-SOW1", "Campaign ID": "CMP-07", "Month": "Apr-26", "Type": "Fee", "Amount": 60000, "Invoice #": "INV-37371AF", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "CMP7-SOW1", "Campaign ID": "CMP-07", "Month": "May-26", "Type": "Fee", "Amount": 60000, "Invoice #": "INV-37372AF", "Recognized?": "Y", "Notes": null}, {"SOW/Task ID": "CMP7-EXTRA1", "Campaign ID": "CMP-07", "Month": "Mar-26", "Type": "Expense", "Amount": 8874.92, "Invoice #": "INV-39804AO", "Recognized?": "Y", "Notes": "OOP Expenses"}, {"SOW/Task ID": "CMP7-EXTRA1", "Campaign ID": "CMP-07", "Month": "May-26", "Type": "Fee", "Amount": 6278.58, "Invoice #": "Not yet assigned", "Recognized?": "Y", "Notes": "OOP Expenses \u2014 no invoice # in source file"}], "invoices": [{"Invoice #": "INV-38952AF", "Campaign": "Haas F1 Partnership", "SOW/Task ID(s)": "CMP5-SOW1", "Period": "Jan-26", "Amount": 19500, "Status": "Sent to Finance", "Date Sent": null, "Notes for Finance": null}, {"Invoice #": "INV-38953AF", "Campaign": "Haas F1 Partnership", "SOW/Task ID(s)": "CMP5-SOW1", "Period": "Feb-26 / Apr-26", "Amount": 44500, "Status": "Sent to Finance", "Date Sent": null, "Notes for Finance": "Recognized across two months in source file \u2014 confirm with Finance this is one invoice."}, {"Invoice #": "INV-39386AF", "Campaign": "Haas F1 Partnership", "SOW/Task ID(s)": "CMP5-SOW1", "Period": "Mar-26", "Amount": 14500, "Status": "Sent to Finance", "Date Sent": null, "Notes for Finance": null}, {"Invoice #": "INV-39927AF", "Campaign": "Haas F1 Partnership", "SOW/Task ID(s)": "CMP5-SOW1", "Period": "Apr-26", "Amount": 21500, "Status": "Sent to Finance", "Date Sent": null, "Notes for Finance": null}, {"Invoice #": "INV-40021AF", "Campaign": "Haas F1 Partnership", "SOW/Task ID(s)": "CMP5-SOW1", "Period": "May-26", "Amount": 22500, "Status": "Sent to Finance", "Date Sent": null, "Notes for Finance": null}, {"Invoice #": "INV-40022AF", "Campaign": "Haas F1 Partnership", "SOW/Task ID(s)": "CMP5-SOW1", "Period": "Jun-26", "Amount": 0, "Status": "Not Yet Sent", "Date Sent": null, "Notes for Finance": "Not yet recognized \u2014 $15,000 open."}, {"Invoice #": "INV-40023AF", "Campaign": "Haas F1 Partnership", "SOW/Task ID(s)": "CMP5-SOW1", "Period": "Jul-26", "Amount": 0, "Status": "Not Yet Sent", "Date Sent": null, "Notes for Finance": "Not yet recognized \u2014 $17,250 open."}, {"Invoice #": "INV-40024AF", "Campaign": "Haas F1 Partnership", "SOW/Task ID(s)": "CMP5-SOW1", "Period": "Aug-26", "Amount": 0, "Status": "Not Yet Sent", "Date Sent": null, "Notes for Finance": "Not yet recognized \u2014 $21,500 open."}, {"Invoice #": "INV-40025AF", "Campaign": "Haas F1 Partnership", "SOW/Task ID(s)": "CMP5-SOW1", "Period": "Sep-26", "Amount": 0, "Status": "Not Yet Sent", "Date Sent": null, "Notes for Finance": "Not yet recognized \u2014 $14,000 open."}, {"Invoice #": "INV-40026AF", "Campaign": "Haas F1 Partnership", "SOW/Task ID(s)": "CMP5-SOW1", "Period": "Oct-26", "Amount": 0, "Status": "Not Yet Sent", "Date Sent": null, "Notes for Finance": "Not yet recognized \u2014 $14,000 open."}, {"Invoice #": "INV-40027AF", "Campaign": "Haas F1 Partnership", "SOW/Task ID(s)": "CMP5-SOW1", "Period": "Nov-26", "Amount": 0, "Status": "Not Yet Sent", "Date Sent": null, "Notes for Finance": "Not yet recognized \u2014 $21,500 open."}, {"Invoice #": "INV-40028AF", "Campaign": "Haas F1 Partnership", "SOW/Task ID(s)": "CMP5-SOW1", "Period": "Dec-26", "Amount": 0, "Status": "Not Yet Sent", "Date Sent": null, "Notes for Finance": "Not yet recognized \u2014 $21,500 open."}, {"Invoice #": "INV-37370AF", "Campaign": "Comms AOR", "SOW/Task ID(s)": "CMP7-SOW1", "Period": "Mar-26", "Amount": 60000, "Status": "Sent to Finance", "Date Sent": null, "Notes for Finance": null}, {"Invoice #": "INV-37371AF", "Campaign": "Comms AOR", "SOW/Task ID(s)": "CMP7-SOW1", "Period": "Apr-26", "Amount": 60000, "Status": "Sent to Finance", "Date Sent": null, "Notes for Finance": null}, {"Invoice #": "INV-37372AF", "Campaign": "Comms AOR", "SOW/Task ID(s)": "CMP7-SOW1", "Period": "May-26", "Amount": 60000, "Status": "Sent to Finance", "Date Sent": null, "Notes for Finance": null}, {"Invoice #": "INV-37373AF", "Campaign": "Comms AOR", "SOW/Task ID(s)": "CMP7-SOW1", "Period": "Jun-26", "Amount": 0, "Status": "Not Yet Sent", "Date Sent": null, "Notes for Finance": "Not yet recognized \u2014 $60,000 open."}, {"Invoice #": "INV-39804AO", "Campaign": "Comms AOR", "SOW/Task ID(s)": "CMP7-EXTRA1", "Period": "Mar-26", "Amount": 8874.92, "Status": "Sent to Finance", "Date Sent": null, "Notes for Finance": "OOP Expenses."}]};
+
+  function fmt(n) {
+    if (n === null || n === undefined || n === '') return '-';
+    var num = Number(n);
+    if (isNaN(num)) return n;
+    return num.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  }
+
+  var campaigns = DATA.campaigns;
+  var subprojects = DATA.subprojects;
+  var monthly = DATA.monthly;
+  var invoices = DATA.invoices;
+
+  var totalBudget = campaigns.reduce(function(s,c){ return s + (c['Revised Budget']||0); }, 0);
+  var totalEarned = campaigns.reduce(function(s,c){ return s + (c['Total Earned']||0); }, 0);
+  var totalOpen = campaigns.reduce(function(s,c){ return s + (c['Total Open']||0); }, 0);
+  var totalFlex = campaigns.reduce(function(s,c){ return s + (c['Available to Reallocate (Flex)']||0); }, 0);
+  var unassigned = monthly.filter(function(m){ return m['Invoice #'] === 'Not yet assigned'; })
+                           .reduce(function(s,m){ return s + (m['Amount']||0); }, 0);
+  var notYetSent = invoices.filter(function(i){ return i['Status'] === 'Not Yet Sent'; }).length;
+
+  var kpiData = [
+    { label: 'Total budget across campaigns', val: fmt(totalBudget) },
+    { label: 'Total earned to date', val: fmt(totalEarned) },
+    { label: 'Total open', val: fmt(totalOpen) },
+    { label: 'Available to reallocate (flex)', val: fmt(totalFlex) },
+    { label: 'Invoices not yet sent to Finance', val: notYetSent }
+  ];
+  document.getElementById('kpis').innerHTML = kpiData.map(function(k) {
+    return '<div class="rrt-kpi"><div class="rrt-kpi-label">' + k.label + '</div><div class="rrt-kpi-val">' + k.val + '</div></div>';
+  }).join('');
+
+  new Chart(document.getElementById('campaignChart'), {
+    type: 'bar',
+    data: {
+      labels: campaigns.map(function(c){ return c['Campaign ID']; }),
+      datasets: [
+        { label: 'Budget', data: campaigns.map(function(c){ return Math.round(c['Revised Budget']||0); }), backgroundColor: '#2a78d6' },
+        { label: 'Earned', data: campaigns.map(function(c){ return Math.round(c['Total Earned']||0); }), backgroundColor: '#008300' },
+        { label: 'Open', data: campaigns.map(function(c){ return Math.round(c['Total Open']||0); }), backgroundColor: '#eda100' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { y: { ticks: { callback: function(v){ return fmt(v); } } } },
+      plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 10 } },
+                 tooltip: { callbacks: { label: function(ctx){ return ctx.dataset.label + ': ' + fmt(ctx.parsed.y); } } } }
+    }
+  });
+
+  new gridjs.Grid({
+    columns: [
+      { name: 'Campaign ID', width: '90px' },
+      { name: 'Campaign Name' },
+      { name: 'Revised Budget', formatter: (c) => fmt(c) },
+      { name: 'Allocated to Sub-Projects', formatter: (c) => fmt(c) },
+      { name: 'Available to Reallocate (Flex)', formatter: (c) => fmt(c) },
+      { name: 'Total Earned', formatter: (c) => fmt(c) },
+      { name: 'Total Open', formatter: (c) => fmt(c) }
+    ],
+    data: campaigns.map(function(c){
+      return [c['Campaign ID'], c['Campaign Name'], c['Revised Budget'], c['Allocated to Sub-Projects'],
+              c['Available to Reallocate (Flex)'], c['Total Earned'], c['Total Open']];
+    }),
+    sort: true, search: true, resizable: true,
+    style: { table: { fontSize: '12.5px' } }
+  }).render(document.getElementById('campaignsGrid'));
+
+  var campaignFilter = document.getElementById('campaignFilter');
+  var options = ['All campaigns'].concat(campaigns.map(function(c){ return c['Campaign ID'] + ' - ' + c['Campaign Name']; }));
+  campaignFilter.innerHTML = options.map(function(o,i){ return '<option value="' + (i===0 ? 'All' : campaigns[i-1]['Campaign ID']) + '">' + o + '</option>'; }).join('');
+
+  var subGridInstance = null;
+  function renderSubGrid(filterId) {
+    var rows = subprojects.filter(function(s){ return filterId === 'All' || s['Campaign ID'] === filterId; });
+    var el = document.getElementById('subGrid');
+    el.innerHTML = '';
+    subGridInstance = new gridjs.Grid({
+      columns: [
+        { name: 'SOW/Task ID', width: '110px' },
+        { name: 'Campaign ID', width: '90px' },
+        { name: 'Description' },
+        { name: 'Revised Budget', formatter: (c) => fmt(c) },
+        { name: 'Earned to Date', formatter: (c) => fmt(c) },
+        { name: 'Open', formatter: (c) => fmt(c) },
+        { name: 'Status', width: '100px' }
+      ],
+      data: rows.map(function(s){
+        return [s['SOW/Task ID'], s['Campaign ID'], s['Description'], s['Revised Budget'], s['Earned to Date'], s['Open'], s['Status']];
+      }),
+      sort: true, search: true, resizable: true,
+      style: { table: { fontSize: '12.5px' } }
+    });
+    subGridInstance.render(el);
+  }
+  renderSubGrid('All');
+  campaignFilter.addEventListener('change', function(e){ renderSubGrid(e.target.value); });
+
+  var STATUS_KEY = 'rrt_invoice_status_overrides';
+  var overrides = {};
+  try { overrides = JSON.parse(localStorage.getItem(STATUS_KEY) || '{}'); } catch(e) {}
+
+  var currentFilter = 'All';
+  function renderInvoices() {
+    var rows = invoices.filter(function(i){
+      var status = overrides[i['Invoice #']] || i['Status'];
+      return currentFilter === 'All' || status === currentFilter;
+    });
+    var el = document.getElementById('invoicesGrid');
+    el.innerHTML = '';
+    new gridjs.Grid({
+      columns: [
+        { name: 'Invoice #', width: '120px' },
+        { name: 'Campaign' },
+        { name: 'SOW/Task ID(s)', width: '110px' },
+        { name: 'Period', width: '110px' },
+        { name: 'Amount', formatter: (c) => fmt(c) },
+        {
+          name: 'Status', width: '150px',
+          formatter: (_, row) => {
+            var invNum = row.cells[0].data;
+            var status = overrides[invNum] || row.cells[5].data;
+            var select = gridjs.h('select', {
+              className: 'rrt-status-select',
+              onchange: (e) => {
+                overrides[invNum] = e.target.value;
+                localStorage.setItem(STATUS_KEY, JSON.stringify(overrides));
+              }
+            }, ['Not Yet Sent', 'Sent to Finance', 'Confirmed by Finance'].map(function(opt){
+              return gridjs.h('option', { value: opt, selected: opt === status }, opt);
+            }));
+            return select;
+          }
+        }
+      ],
+      data: rows.map(function(i){
+        return [i['Invoice #'], i['Campaign'], i['SOW/Task ID(s)'], i['Period'], i['Amount'], overrides[i['Invoice #']] || i['Status']];
+      }),
+      sort: true, search: true, resizable: true,
+      style: { table: { fontSize: '12.5px' } }
+    }).render(el);
+  }
+  renderInvoices();
+
+  document.querySelectorAll('.rrt-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.rrt-btn').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentFilter = btn.getAttribute('data-filter');
+      renderInvoices();
+    });
+  });
+
+  document.getElementById('unassignedTotal').textContent = fmt(unassigned);
+
+  var flags = [
+    ['Duplicate Campaign ID', '\u201cCampaign UCMC-010\u201d was used for both Strategic Counsel & Advisory Support and Comms AOR in the source file. Split into CMP-06 and CMP-07 here.'],
+    ['Comms AOR budget reconstructed', 'No top-level budget existed in the source file; the $255,153.50 total shown here is backed into from known invoices. Confirm the real contracted amount.'],
+    ['Cancer Center Pavilion budget reconstructed', 'The original Revised Budget cell had a broken reference (#REF!) error. The $2,215,000 shown here is the sum of its sub-projects.'],
+    ['Landing Page Design has no budget', 'SOW 26-UCMC-050 has $1,032.50 earned but no Original Budget was ever entered.'],
+    ['Most revenue has no invoice number', 'Only Haas F1 Partnership and Comms AOR had invoice numbers captured in the source file. See the unassigned total above.'],
+    ['Service Line Campaigns is empty', 'This campaign exists with a $0 budget and no sub-projects were ever itemized under it.']
+  ];
+  document.getElementById('flags').innerHTML = flags.map(function(f){
+    return '<div class="rrt-flag"><b>' + f[0] + '</b>' + f[1] + '</div>';
+  }).join('');
+})();
+</script>
