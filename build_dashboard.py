@@ -1,5 +1,8 @@
 import json
 import os
+import sys
+
+import openpyxl
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -9,8 +12,48 @@ REPO_NAME = "UCM-Revenue-Recognition-Tracker"
 REPO_BRANCH = "main"
 DATA_PATH = "dashboard_data.json"
 
-with open(os.path.join(SCRIPT_DIR, "dashboard_data.json")) as f:
-    data = json.load(f)
+XLSX_PATH = sys.argv[1] if len(sys.argv) > 1 else os.path.join(SCRIPT_DIR, "Revenue Recognition Tracker.xlsx")
+
+
+def extract_data_from_workbook(xlsx_path):
+    """Reads the four tracked tabs straight from the .xlsx (cached formula
+    values, so the workbook must have been opened/saved in Excel or
+    recalculated with LibreOffice first) and shapes them the same way the
+    dashboard expects."""
+    wb = openpyxl.load_workbook(xlsx_path, data_only=True)
+
+    def rows(sheet_name, max_col):
+        ws = wb[sheet_name]
+        headers = [ws.cell(row=1, column=c).value for c in range(1, max_col + 1)]
+        out = []
+        for r in range(2, ws.max_row + 1):
+            vals = [ws.cell(row=r, column=c).value for c in range(1, max_col + 1)]
+            if all(v is None for v in vals):
+                continue
+            out.append(dict(zip(headers, vals)))
+        return out
+
+    campaigns = [c for c in rows("Campaigns", 10) if c.get("Campaign ID")]
+    subprojects = rows("Sub-Projects (SOWs)", 10)
+    monthly = rows("Monthly Recognition", 8)
+    invoices_all = rows("Invoices - Finance", 8)
+    invoices = [
+        i for i in invoices_all
+        if isinstance(i.get("Invoice #"), str) and i.get("Invoice #").startswith("INV-")
+    ]
+    for i, m in enumerate(monthly, start=1):
+        m["id"] = "M%03d" % i
+
+    return {"campaigns": campaigns, "subprojects": subprojects, "monthly": monthly, "invoices": invoices}
+
+
+data = extract_data_from_workbook(XLSX_PATH)
+
+# Also write the JSON snapshot alongside the .xlsx. It isn't something you
+# need to edit by hand, but it's what gets committed to git over time so the
+# dashboard's History calendar has something to diff against.
+with open(os.path.join(SCRIPT_DIR, "dashboard_data.json"), "w") as f:
+    json.dump(data, f, indent=2)
 
 data_json = json.dumps(data)
 
